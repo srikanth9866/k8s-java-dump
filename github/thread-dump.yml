@@ -1,5 +1,5 @@
 
-name: Java Thread Dump
+name: Java-Thread-Dump
 
 on:
   workflow_dispatch:

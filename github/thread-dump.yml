@@ -1,1 +1,78 @@
 
+name: Java Thread Dump
+
+on:
+  workflow_dispatch:
+    inputs:
+      namespace:
+        description: "Kubernetes Namespace"
+        required: true
+        default: "demo"
+
+      pod:
+        description: "Pod Name"
+        required: true
+        default: "java-test-pod"
+
+jobs:
+  thread-dump:
+
+    runs-on:
+      - self-hosted
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify Cluster
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: Verify Pod
+        run: |
+          kubectl get pod \
+          ${{ github.event.inputs.pod }} \
+          -n ${{ github.event.inputs.namespace }}
+
+      - name: Verify Java
+        run: |
+          kubectl exec \
+          -n ${{ github.event.inputs.namespace }} \
+          ${{ github.event.inputs.pod }} \
+          -- java -version
+
+      - name: Find Java PID
+        id: pid
+        shell: bash
+        run: |
+          PID=$(kubectl exec \
+            -n ${{ github.event.inputs.namespace }} \
+            ${{ github.event.inputs.pod }} \
+            -- jcmd | awk '$2 !~ /JCmd/ {print $1; exit}')
+
+          echo "PID=$PID"
+          echo "PID=$PID" >> $GITHUB_ENV
+
+      - name: Generate Thread Dump
+        run: |
+
+          kubectl exec \
+            -n ${{ github.event.inputs.namespace }} \
+            ${{ github.event.inputs.pod }} \
+            -- sh -c \
+            "jcmd $PID Thread.print > /tmp/thread-dump.txt"
+
+      - name: Copy Thread Dump
+        run: |
+
+          kubectl cp \
+          ${{ github.event.inputs.namespace }}/${{ github.event.inputs.pod }}:/tmp/thread-dump.txt \
+          thread-dump.txt
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Thread-Dump
+          path: thread-dump.txt

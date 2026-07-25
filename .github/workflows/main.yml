@@ -1,28 +1,74 @@
-name: Test Self Hosted Runner
+name: Java Heap Dump
 
 on:
   workflow_dispatch:
+    inputs:
+      namespace:
+        description: "Kubernetes Namespace"
+        required: true
+        default: "demo"
+
+      pod:
+        description: "Pod Name"
+        required: true
+        default: "java-test-pod"
 
 jobs:
-  test-runner:
-    runs-on: self-hosted
+  heap-dump:
+
+    runs-on:
+      - self-hosted
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
 
-      - name: Runner Details
-        run: |
-          echo "Runner is working"
-          hostname
-          whoami
-          pwd
+      - uses: actions/checkout@v4
 
-      - name: Verify Kubernetes Access
+      - name: Verify Cluster
         run: |
           kubectl cluster-info
           kubectl get nodes
 
-      - name: Verify Demo Pods
+      - name: Verify Pod
         run: |
-          kubectl get pods -n demo
+          kubectl get pod \
+          ${{ github.event.inputs.pod }} \
+          -n ${{ github.event.inputs.namespace }}
+
+      - name: Verify Java
+        run: |
+          kubectl exec \
+          -n ${{ github.event.inputs.namespace }} \
+          ${{ github.event.inputs.pod }} \
+          -- java -version
+
+      - name: Find Java PID
+        shell: bash
+        run: |
+          PID=$(kubectl exec \
+            -n ${{ github.event.inputs.namespace }} \
+            ${{ github.event.inputs.pod }} \
+            -- jcmd | awk '$2 !~ /JCmd/ {print $1; exit}')
+
+          echo "PID=$PID"
+          echo "PID=$PID" >> $GITHUB_ENV
+
+      - name: Generate Heap Dump
+        run: |
+
+          kubectl exec \
+            -n ${{ github.event.inputs.namespace }} \
+            ${{ github.event.inputs.pod }} \
+            -- jcmd $PID GC.heap_dump /tmp/heap.hprof
+
+      - name: Copy Heap Dump
+        run: |
+
+          kubectl cp \
+          ${{ github.event.inputs.namespace }}/${{ github.event.inputs.pod }}:/tmp/heap.hprof \
+          heap.hprof
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Heap-Dump
+          path: heap.hprof

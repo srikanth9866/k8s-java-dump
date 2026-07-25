@@ -1,0 +1,28 @@
+name: Test Self Hosted Runner
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-runner:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Runner Details
+        run: |
+          echo "Runner is working"
+          hostname
+          whoami
+          pwd
+
+      - name: Verify Kubernetes Access
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: Verify Demo Pods
+        run: |
+          kubectl get pods -n demo

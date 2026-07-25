@@ -1,4 +1,80 @@
-name: Java Heap Dump
+# name: Java Heap Dump
+
+# on:
+#   workflow_dispatch:
+#     inputs:
+#       namespace:
+#         description: "Kubernetes Namespace"
+#         required: true
+#         default: "demo"
+
+#       pod:
+#         description: "Pod Name"
+#         required: true
+#         default: "java-test-pod"
+
+# jobs:
+#   heap-dump:
+
+#     runs-on:
+#       - self-hosted
+
+#     steps:
+
+#       - uses: actions/checkout@v4
+
+#       - name: Verify Cluster
+#         run: |
+#           kubectl cluster-info
+#           kubectl get nodes
+
+#       - name: Verify Pod
+#         run: |
+#           kubectl get pod \
+#           ${{ github.event.inputs.pod }} \
+#           -n ${{ github.event.inputs.namespace }}
+
+#       - name: Verify Java
+#         run: |
+#           kubectl exec \
+#           -n ${{ github.event.inputs.namespace }} \
+#           ${{ github.event.inputs.pod }} \
+#           -- java -version
+
+#       - name: Find Java PID
+#         shell: bash
+#         run: |
+#           PID=$(kubectl exec \
+#             -n ${{ github.event.inputs.namespace }} \
+#             ${{ github.event.inputs.pod }} \
+#             -- jcmd | awk '$2 !~ /JCmd/ {print $1; exit}')
+
+#           echo "PID=$PID"
+#           echo "PID=$PID" >> $GITHUB_ENV
+
+#       - name: Generate Heap Dump
+#         run: |
+
+#           kubectl exec \
+#             -n ${{ github.event.inputs.namespace }} \
+#             ${{ github.event.inputs.pod }} \
+#             -- jcmd $PID GC.heap_dump /tmp/heap.hprof
+
+#       - name: Copy Heap Dump
+#         run: |
+
+#           kubectl cp \
+#           ${{ github.event.inputs.namespace }}/${{ github.event.inputs.pod }}:/tmp/heap.hprof \
+#           heap.hprof
+
+#       - name: Upload Artifact
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: Heap-Dump
+#           path: heap.hprof
+
+
+name: Java Dump Collection
 
 on:
   workflow_dispatch:
@@ -13,15 +89,24 @@ on:
         required: true
         default: "java-test-pod"
 
-jobs:
-  heap-dump:
+      dump_type:
+        description: "Select Dump Type"
+        required: true
+        type: choice
+        default: thread
+        options:
+          - thread
+          - heap
 
-    runs-on:
-      - self-hosted
+jobs:
+  java-dump:
+
+    runs-on: self-hosted
 
     steps:
 
-      - uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
       - name: Verify Cluster
         run: |
@@ -31,15 +116,15 @@ jobs:
       - name: Verify Pod
         run: |
           kubectl get pod \
-          ${{ github.event.inputs.pod }} \
-          -n ${{ github.event.inputs.namespace }}
+            ${{ github.event.inputs.pod }} \
+            -n ${{ github.event.inputs.namespace }}
 
       - name: Verify Java
         run: |
           kubectl exec \
-          -n ${{ github.event.inputs.namespace }} \
-          ${{ github.event.inputs.pod }} \
-          -- java -version
+            -n ${{ github.event.inputs.namespace }} \
+            ${{ github.event.inputs.pod }} \
+            -- java -version
 
       - name: Find Java PID
         shell: bash
@@ -49,26 +134,58 @@ jobs:
             ${{ github.event.inputs.pod }} \
             -- jcmd | awk '$2 !~ /JCmd/ {print $1; exit}')
 
-          echo "PID=$PID"
+          echo "Detected PID: $PID"
+
           echo "PID=$PID" >> $GITHUB_ENV
 
-      - name: Generate Heap Dump
+      - name: Generate Thread Dump
+        if: github.event.inputs.dump_type == 'thread'
         run: |
+          kubectl exec \
+            -n ${{ github.event.inputs.namespace }} \
+            ${{ github.event.inputs.pod }} \
+            -- sh -c "jcmd $PID Thread.print > /tmp/thread-dump.txt"
 
+      - name: Copy Thread Dump
+        if: github.event.inputs.dump_type == 'thread'
+        run: |
+          kubectl cp \
+            ${{ github.event.inputs.namespace }}/${{ github.event.inputs.pod }}:/tmp/thread-dump.txt \
+            thread-dump.txt
+
+      - name: Generate Heap Dump
+        if: github.event.inputs.dump_type == 'heap'
+        run: |
           kubectl exec \
             -n ${{ github.event.inputs.namespace }} \
             ${{ github.event.inputs.pod }} \
             -- jcmd $PID GC.heap_dump /tmp/heap.hprof
 
       - name: Copy Heap Dump
+        if: github.event.inputs.dump_type == 'heap'
         run: |
-
           kubectl cp \
-          ${{ github.event.inputs.namespace }}/${{ github.event.inputs.pod }}:/tmp/heap.hprof \
-          heap.hprof
+            ${{ github.event.inputs.namespace }}/${{ github.event.inputs.pod }}:/tmp/heap.hprof \
+            heap.hprof
 
-      - name: Upload Artifact
+      - name: Upload Thread Dump
+        if: github.event.inputs.dump_type == 'thread'
         uses: actions/upload-artifact@v4
         with:
-          name: Heap-Dump
+          name: Thread-Dump-${{ github.event.inputs.pod }}-${{ github.run_number }}
+          path: thread-dump.txt
+
+      - name: Upload Heap Dump
+        if: github.event.inputs.dump_type == 'heap'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Heap-Dump-${{ github.event.inputs.pod }}-${{ github.run_number }}
           path: heap.hprof
+
+      - name: Cleanup Dump File
+        if: always()
+        run: |
+          kubectl exec \
+            -n ${{ github.event.inputs.namespace }} \
+            ${{ github.event.inputs.pod }} \
+            -- sh -c "rm -f /tmp/thread-dump.txt /tmp/heap.hprof"

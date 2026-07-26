@@ -126,17 +126,33 @@ jobs:
             ${{ github.event.inputs.pod }} \
             -- java -version
 
+      # - name: Find Java PID
+      #   shell: bash
+      #   run: |
+      #     PID=$(kubectl exec \
+      #       -n ${{ github.event.inputs.namespace }} \
+      #       ${{ github.event.inputs.pod }} \
+      #       -- jcmd | awk '$2 !~ /JCmd/ {print $1; exit}')
+
+      #     echo "Detected PID: $PID"
+
+      #     echo "PID=$PID" >> $GITHUB_ENV
+
       - name: Find Java PID
         shell: bash
         run: |
-          PID=$(kubectl exec \
-            -n ${{ github.event.inputs.namespace }} \
-            ${{ github.event.inputs.pod }} \
-            -- jcmd | awk '$2 !~ /JCmd/ {print $1; exit}')
-
-          echo "Detected PID: $PID"
-
-          echo "PID=$PID" >> $GITHUB_ENV
+           PID=$(kubectl exec \
+             -n ${{ github.event.inputs.namespace }} \
+             ${{ github.event.inputs.pod }} \
+             -- jcmd -l | grep -v "jdk.jcmd" | awk '{print $1}' | head -n1)
+          
+            if [ -z "$PID" ]; then
+              echo "No Java process found."
+              exit 1
+            fi
+          
+            echo "Detected JVM PID: $PID"
+            echo "PID=$PID" >> "$GITHUB_ENV"
 
       - name: Generate Thread Dump
         if: github.event.inputs.dump_type == 'thread'

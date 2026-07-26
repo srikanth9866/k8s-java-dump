@@ -46,12 +46,17 @@ jobs:
       - name: Get Deployment Selector
         shell: bash
         run: |
-          SELECTOR=$(kubectl get deployment \
-            "${{ github.event.inputs.deployment }}" \
-            -n "${{ github.event.inputs.namespace }}" \
-            -o jsonpath='{range $k,$v:=.spec.selector.matchLabels}{$k}={$v},{end}')
+          # SELECTOR=$(kubectl get deployment \
+          #   "${{ github.event.inputs.deployment }}" \
+          #   -n "${{ github.event.inputs.namespace }}" \
+          #   -o jsonpath='{range $k,$v:=.spec.selector.matchLabels}{$k}={$v},{end}')
 
-          SELECTOR=${SELECTOR%,}
+          # SELECTOR=${SELECTOR%,}
+
+          SELECTOR=$(kubectl describe deployment thread-dump-demo -n demo \
+            | awk -F': ' '/Selector:/ {print $2}')
+          
+          echo "$SELECTOR"
 
           if [ -z "$SELECTOR" ]; then
             echo "Unable to determine deployment selector."

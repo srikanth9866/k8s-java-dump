@@ -1,0 +1,159 @@
+name: Java Dump Collection
+
+on:
+  workflow_dispatch:
+    inputs:
+      namespace:
+        description: "Kubernetes Namespace"
+        required: true
+        default: "demo"
+
+      deployment:
+        description: "Deployment Name"
+        required: true
+        default: "java-demo"
+
+      dump_type:
+        description: "Dump Type"
+        required: true
+        type: choice
+        default: thread
+        options:
+          - thread
+          - heap
+
+jobs:
+  java-dump:
+    runs-on: arc-runner-set
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Verify Cluster Access
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: Verify Deployment
+        run: |
+          kubectl get deployment \
+            "${{ github.event.inputs.deployment }}" \
+            -n "${{ github.event.inputs.namespace }}"
+
+      - name: Get Deployment Selector
+        shell: bash
+        run: |
+
+          SELECTOR=$(kubectl get deployment \
+            "${{ github.event.inputs.deployment }}" \
+            -n "${{ github.event.inputs.namespace }}" \
+            -o jsonpath='{range $k,$v:=.spec.selector.matchLabels}{$k}={$v},{end}')
+
+          SELECTOR=${SELECTOR%,}
+
+          if [ -z "$SELECTOR" ]; then
+            echo "Unable to determine deployment selector."
+            exit 1
+          fi
+
+          echo "Selector: $SELECTOR"
+          echo "SELECTOR=$SELECTOR" >> "$GITHUB_ENV"
+
+      - name: Get Running Pods
+        shell: bash
+        run: |
+
+          PODS=$(kubectl get pods \
+            -n "${{ github.event.inputs.namespace }}" \
+            -l "$SELECTOR" \
+            --field-selector=status.phase=Running \
+            -o jsonpath='{.items[*].metadata.name}')
+
+          if [ -z "$PODS" ]; then
+            echo "No running pods found."
+            exit 1
+          fi
+
+          echo "Running Pods:"
+          echo "$PODS"
+
+          mkdir -p dumps
+
+          echo "$PODS" | tr ' ' '\n' > pods.txt
+
+      - name: Collect Java Dumps
+        shell: bash
+        run: |
+
+          while read POD
+          do
+
+            echo "======================================"
+            echo "Processing Pod: $POD"
+            echo "======================================"
+
+            PID=$(kubectl exec \
+              -n "${{ github.event.inputs.namespace }}" \
+              "$POD" \
+              -- jcmd \
+              | grep -v "jdk.jcmd" \
+              | awk '{print $1}' \
+              | head -1)
+
+            if [ -z "$PID" ]; then
+              echo "No Java process found in $POD"
+              continue
+            fi
+
+            echo "Java PID: $PID"
+
+            if [ "${{ github.event.inputs.dump_type }}" = "thread" ]; then
+
+              echo "Collecting Thread Dump..."
+
+              kubectl exec \
+                -n "${{ github.event.inputs.namespace }}" \
+                "$POD" \
+                -- sh -c "jcmd $PID Thread.print > /tmp/thread-dump.txt"
+
+              kubectl cp \
+                "${{ github.event.inputs.namespace }}/$POD:/tmp/thread-dump.txt" \
+                "dumps/${POD}-thread-dump.txt"
+
+              kubectl exec \
+                -n "${{ github.event.inputs.namespace }}" \
+                "$POD" \
+                -- rm -f /tmp/thread-dump.txt
+
+            else
+
+              echo "Collecting Heap Dump..."
+
+              kubectl exec \
+                -n "${{ github.event.inputs.namespace }}" \
+                "$POD" \
+                -- jcmd "$PID" GC.heap_dump /tmp/heap.hprof
+
+              kubectl cp \
+                "${{ github.event.inputs.namespace }}/$POD:/tmp/heap.hprof" \
+                "dumps/${POD}-heap.hprof"
+
+              kubectl exec \
+                -n "${{ github.event.inputs.namespace }}" \
+                "$POD" \
+                -- rm -f /tmp/heap.hprof
+
+            fi
+
+          done < pods.txt
+
+      - name: Show Collected Files
+        run: |
+          ls -lh dumps
+
+      - name: Upload Dumps
+        uses: actions/upload-artifact@v4
+        with:
+          name: Java-Dumps-${{ github.event.inputs.deployment }}-${{ github.event.inputs.dump_type }}-${{ github.run_number }}
+          path: dumps/

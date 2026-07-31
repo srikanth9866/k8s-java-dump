@@ -1,4 +1,4 @@
-name: Java Dump Collection
+name: Java Dump Collection-1
 
 on:
   workflow_dispatch:

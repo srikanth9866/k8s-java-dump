@@ -25,7 +25,8 @@ on:
 jobs:
   java-dump:
 
-    runs-on: self-hosted
+    #runs-on: self-hosted
+    runs-on: arc-runner-set
 
     steps:
 

@@ -1,4 +1,4 @@
-name: Java Dump Collection-1
+name: Java Dump Collection
 
 on:
   workflow_dispatch:
@@ -29,6 +29,9 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
 
       - name: Verify Cluster Access
         run: |

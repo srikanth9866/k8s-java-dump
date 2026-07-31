@@ -1,0 +1,24 @@
+name: ARC Runner Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  runner-test:
+    runs-on: arc-runner-set
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Runner Details
+        run: |
+          echo "Runner Name: $RUNNER_NAME"
+          echo "Runner OS: $RUNNER_OS"
+          echo "Runner Arch: $RUNNER_ARCH"
+          hostname
+          uname -a
+
+      - name: Verify Java Pod
+        run: |
+          kubectl get pods -n demo

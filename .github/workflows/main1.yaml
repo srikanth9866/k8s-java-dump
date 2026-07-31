@@ -33,10 +33,11 @@ jobs:
       - name: Set up kubectl
         uses: azure/setup-kubectl@v4
 
-      - name: Verify Cluster Access
+      - name: Verify Namespace Access
         run: |
-          kubectl cluster-info
-          kubectl get nodes
+          kubectl auth can-i get deployments -n "${{ github.event.inputs.namespace }}"
+          kubectl auth can-i list pods -n "${{ github.event.inputs.namespace }}"
+          kubectl auth can-i create pods/exec -n "${{ github.event.inputs.namespace }}"
 
       - name: Verify Deployment
         run: |
